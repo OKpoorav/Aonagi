@@ -9,34 +9,26 @@ import (
 )
 
 type Hub struct {
-	Clients []Client
+	clients map[string]*Client
 	mu      sync.RWMutex
 }
 
-var HubInstance = &Hub{}
+var HubInstance = &Hub{
+	clients: make(map[string]*Client),
+}
 
-func (h *Hub) AddClient(c Client) {
+func (h *Hub) AddClient(c *Client) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	h.Clients = append(h.Clients, c)
+	h.clients[c.ID] = c
 }
 
 func (h *Hub) RemoveClient(id string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	targetIndex := -1
-	for i, val := range h.Clients {
-		if val.ID == id {
-			targetIndex = i
-			break
-		}
-	}
 
-	if targetIndex != -1 {
-		h.Clients = append(h.Clients[:targetIndex], h.Clients[targetIndex+1:]...)
-	}
-	
+	delete(h.clients, id)
 }
 
 func (h *Hub) BroadCast(msg Message) {
@@ -45,10 +37,15 @@ func (h *Hub) BroadCast(msg Message) {
 
 	x, err := json.Marshal(msg)
 	if err != nil {
-		log.Println("Correpted", err)
+		log.Println("Corrupted message:", err)
+		return
 	}
-	for _, client := range h.Clients {
-		client.Conn.WriteMessage(websocket.TextMessage, x)
-
+	for _, client := range h.clients {
+		if client.RoomID == msg.GroupID {
+			err := client.Conn.WriteMessage(websocket.TextMessage, x)
+			if err != nil {
+				log.Printf("Error writing to client %s: %s\n", client.ID, err)
+			}
+		}
 	}
 }
